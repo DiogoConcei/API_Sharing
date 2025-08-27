@@ -1,81 +1,10 @@
 import { Router } from "express";
-import multer from "multer";
-import crypto from "crypto";
-import path from "path";
-import { nanoid } from "nanoid";
-import os from "os";
+import upload from "../middleware/multer";
+import { handleUpload, handleDownload } from "../services/fileService";
 
 const router = Router();
-const hashMap = new Map<string, string>(); // hash -> filename
 
-const storage = multer.memoryStorage();
-
-const upload = multer({ storage });
-
-const fileMap = new Map<
-  string,
-  { filename: string; expiresAt: number; mimetype: string }
->();
-
-function getLocalIp(): string {
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]!) {
-      if (net.family === "IPv4" && !net.internal) {
-        return net.address;
-      }
-    }
-  }
-  return "localhost";
-}
-
-router.post("/upload", upload.single("file"), (req, res) => {
-  if (!req.file)
-    return res.status(400).json({ error: "Nenhum arquivo enviado" });
-
-  const hash = crypto
-    .createHash("sha256")
-    .update(req.file.buffer)
-    .digest("hex");
-
-  const code = nanoid(6); // código curto
-  const expiresIn = 5 * 60 * 1000; // 5 minutos
-  const expiresAt = Date.now() + expiresIn;
-
-  fileMap.set(code, {
-    filename: req.file.filename,
-    mimetype: req.file.mimetype,
-    expiresAt,
-  });
-
-  const ip = getLocalIp();
-  const port = process.env.PORT || 3030;
-  const maskedUrl = `http://${ip}:${port}/api/dl/${code}`;
-
-  return res.json({
-    url: maskedUrl,
-    expiresInMs: expiresIn,
-    code,
-  });
-});
-
-router.get("/dl/:code", (req, res) => {
-  const code = req.params.code;
-  const fileEntry = fileMap.get(code);
-
-  if (!fileEntry) {
-    return res.status(404).send("Arquivo não encontrado ou expirado");
-  }
-
-  if (Date.now() > fileEntry.expiresAt) {
-    fileMap.delete(code);
-    return res.status(410).send("Link expirado");
-  }
-
-  const filePath = path.join(__dirname, "../uploads", fileEntry.filename);
-  res.type(fileEntry.mimetype);
-
-  return res.sendFile(filePath);
-});
+router.post("/upload", upload.single("file"), handleUpload);
+router.get("/dl/:code", handleDownload);
 
 export default router;
