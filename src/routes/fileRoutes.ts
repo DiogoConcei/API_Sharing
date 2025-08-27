@@ -1,20 +1,14 @@
 import { Router } from "express";
 import multer from "multer";
+import crypto from "crypto";
 import path from "path";
 import { nanoid } from "nanoid";
 import os from "os";
 
 const router = Router();
+const hashMap = new Map<string, string>(); // hash -> filename
 
-// Onde os arquivos serão salvos
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, "../uploads"),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const name = nanoid(10) + ext;
-    cb(null, name);
-  },
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({ storage });
 
@@ -38,6 +32,11 @@ function getLocalIp(): string {
 router.post("/upload", upload.single("file"), (req, res) => {
   if (!req.file)
     return res.status(400).json({ error: "Nenhum arquivo enviado" });
+
+  const hash = crypto
+    .createHash("sha256")
+    .update(req.file.buffer)
+    .digest("hex");
 
   const code = nanoid(6); // código curto
   const expiresIn = 5 * 60 * 1000; // 5 minutos
